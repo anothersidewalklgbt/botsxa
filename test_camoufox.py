@@ -9,7 +9,7 @@ import psycopg2
 # ---------- Config ----------
 TARGET = "https://www.roblox.com/es"  # URL del formulario de registro
 BASE_PREFIX = "youngceoio"
-NUM_ACCOUNTS = 1
+NUM_ACCOUNTS = 2
 HEADLESS = True
 PAUSE_BETWEEN = 1
 ENSURE_UNIQUE = True
@@ -232,3 +232,4 @@ if __name__ == "__main__":
     if not TARGET:
         print("ATENCIÓN: no has configurado TARGET. Edita el script y pon la URL de tu formulario.")
     main()
+
