@@ -1,10 +1,10 @@
-# test_camoufox.py (registro con formulario estilo Roblox) - ESPERAR "Inicio"
+# test_camoufox.py (registro con formulario estilo Roblox) - ESPERAR "Inicio" - PostgreSQL
+import os
 import random
 import string
 import time
-import os
-import psycopg2
 from camoufox.sync_api import Camoufox
+import psycopg2
 
 # ---------- Config ----------
 TARGET = "https://www.roblox.com/es"  # URL del formulario de registro
@@ -59,31 +59,42 @@ def wait_for_inicio_or_success(page, target_url, idx, timeout=20000):
                 pass
 
         time.sleep(poll_interval)
+
     return False
 
 # ---------- Main ----------
 def main():
-    creds_to_use = [gen_creds(prefix=BASE_PREFIX, pwd_len=10) for _ in range(NUM_ACCOUNTS)]
+    DATABASE_URL = os.environ.get("DATABASE_URL")
+    if not DATABASE_URL:
+        print("ERROR: No se encontró la variable de entorno DATABASE_URL.")
+        return
 
-    # ---------- Conectar a PostgreSQL ----------
-    DATABASE_URL = os.getenv("DATABASE_URL")
-    conn = psycopg2.connect(DATABASE_URL)
-    cur = conn.cursor()
-
-    # Crear tabla si no existe
-    cur.execute("""
+    try:
+        conn = psycopg2.connect(DATABASE_URL)
+        cursor = conn.cursor()
+        # Crear tabla si no existe
+        cursor.execute("""
         CREATE TABLE IF NOT EXISTS accounts (
             id SERIAL PRIMARY KEY,
             username TEXT NOT NULL,
-            password TEXT NOT NULL,
-            created_at TIMESTAMP DEFAULT NOW()
-        );
-    """)
-    conn.commit()
+            password TEXT NOT NULL
+        )
+        """)
+        conn.commit()
+    except Exception as e:
+        print("ERROR conectando a la base de datos:", e)
+        return
 
-    # Leer usuarios existentes
-    cur.execute("SELECT username FROM accounts;")
-    existing_users = {row[0] for row in cur.fetchall()}
+    creds_to_use = [gen_creds(prefix=BASE_PREFIX, pwd_len=10) for _ in range(NUM_ACCOUNTS)]
+
+    # Leer usuarios existentes de DB
+    existing_users = set()
+    try:
+        cursor.execute("SELECT username FROM accounts")
+        rows = cursor.fetchall()
+        existing_users = set([r[0] for r in rows])
+    except Exception:
+        pass
 
     created_this_run = set()
     created_ordered = []
@@ -106,11 +117,13 @@ def main():
             page = context.new_page()
 
             try:
+                # Navegar a la página
                 try:
                     page.goto(TARGET, timeout=20000, wait_until="domcontentloaded")
                 except Exception as e_goto:
                     print(f"[{idx}] warning: page.goto falló o tardó demasiado: {e_goto}")
 
+                # Esperar input username
                 try:
                     page.wait_for_selector("input#signup-username", timeout=8000)
                 except Exception:
@@ -119,6 +132,7 @@ def main():
                     time.sleep(PAUSE_BETWEEN)
                     continue
 
+                # Fecha de nacimiento
                 try:
                     page.select_option("#DayDropdown", "15")
                     page.select_option("#MonthDropdown", "Jun")
@@ -126,6 +140,7 @@ def main():
                 except Exception:
                     pass
 
+                # Usuario y contraseña
                 try:
                     page.fill("input#signup-username", user)
                     page.fill("input#signup-password", pwd)
@@ -135,11 +150,13 @@ def main():
                     time.sleep(PAUSE_BETWEEN)
                     continue
 
+                # Género
                 try:
                     page.click("button#MaleButton", timeout=3000)
                 except Exception:
                     pass
 
+                # Términos y condiciones
                 try:
                     checkbox = page.wait_for_selector("input#signup-checkbox", timeout=3000)
                     if checkbox:
@@ -148,12 +165,14 @@ def main():
                 except Exception:
                     pass
 
+                # Click en registrarse
                 signup_selectors = [
                     "button#signup-button",
                     "button.signup-button",
                     "button[aria-label='Registrarse']",
                     "button.btn-primary-md.signup-submit-button",
                 ]
+
                 clicked = False
                 for sel in signup_selectors:
                     try:
@@ -172,38 +191,21 @@ def main():
                     time.sleep(PAUSE_BETWEEN)
                     continue
 
+                # Esperar éxito
                 success = wait_for_inicio_or_success(page, TARGET, idx, timeout=20000)
 
-                html = ""
-                try:
-                    html = page.content()[:200000]
-                except Exception:
-                    html = ""
-
-                if not success:
-                    try:
-                        if page.url and page.url != TARGET:
-                            success = True
-                    except Exception:
-                        pass
-
-                if not success and html:
-                    if any(k in html for k in ["Registrado OK.", "Registrado", "Registro completado", "Welcome", "Cuenta creada"]):
-                        success = True
-
                 if success:
-                    # Guardar en PostgreSQL
-                    cur.execute(
-                        "INSERT INTO accounts (username, password) VALUES (%s, %s)",
-                        (user, pwd)
-                    )
-                    conn.commit()
-                    created_this_run.add(user)
-                    created_ordered.append((user, pwd))
-                    if user != original_user:
-                        print(f"[{idx}] '{original_user}' ya existía → usando '{user}'. Guardado.")
-                    else:
-                        print(f"[{idx}] creado: {user} (guardado en DB)")
+                    try:
+                        cursor.execute(
+                            "INSERT INTO accounts (username, password) VALUES (%s, %s)",
+                            (user, pwd)
+                        )
+                        conn.commit()
+                        created_this_run.add(user)
+                        created_ordered.append((user, pwd))
+                        print(f"[{idx}] '{original_user}' creado y guardado en DB como '{user}'.")
+                    except Exception as e_db:
+                        print(f"[{idx}] ERROR guardando en DB: {e_db}")
                 else:
                     print(f"[{idx}] posible fallo al crear {user}: no apareció 'Inicio' ni indicador de éxito.")
 
@@ -218,12 +220,13 @@ def main():
 
             time.sleep(PAUSE_BETWEEN)
 
-    print("\nProceso terminado. Usuarios guardados en la base de datos:")
+    print("\nProceso terminado. Usuarios creados en esta ejecución:")
     for u, p in created_ordered:
         print(" -", u, ":", p)
 
-    cur.close()
+    cursor.close()
     conn.close()
+
 
 if __name__ == "__main__":
     if not TARGET:
