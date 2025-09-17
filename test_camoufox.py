@@ -9,7 +9,7 @@ from camoufox.sync_api import Camoufox
 # ---------- Config ----------
 TARGET = "https://www.roblox.com/es/CreateAccount"  # URL del formulario de registro
 BASE_PREFIX = "youngceoio"
-NUM_ACCOUNTS = 2000
+NUM_ACCOUNTS = 10
 HEADLESS = True
 CSV_FILE = "accounts.csv"
 PAUSE_BETWEEN = 1
@@ -278,4 +278,5 @@ if __name__ == "__main__":
         print("ATENCIÓN: no has configurado TARGET. Edita el script y pon la URL de tu formulario.")
     ensure_csv_header(CSV_FILE)
     main()
+
 
