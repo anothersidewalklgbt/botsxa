@@ -1,3 +1,2 @@
 camoufox
 playwright
-psycopg2-binary
