@@ -1,1 +1,1 @@
-worker: python3 test_camoufox.py
+worker: python test_camoufox.py
